@@ -38,3 +38,5 @@ Thumbs.db
 logs/
 checkpoints/
 outputs/
+.uv-cache/
+.ruff_cache/
