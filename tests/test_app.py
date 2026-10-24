@@ -22,6 +22,10 @@ def test_app_controls() -> None:
         str(Path(__file__).parents[1] / "app" / "main.py"), default_timeout=30
     ).run()
     assert not app.exception
+    for table in app.dataframe[:3]:
+        assert table.value.index.name is None
+        assert list(table.value.index) == [0, 1, 2]
+        assert list(table.value.columns) == [0, 1]
     initial = app.dataframe[5].value.copy()
     app.toggle[0].set_value(True).run()
     assert not app.exception

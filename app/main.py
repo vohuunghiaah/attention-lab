@@ -1,6 +1,7 @@
 """Vietnamese Streamlit laboratory driven entirely by real attention results."""
 
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 import torch
@@ -43,6 +44,27 @@ def heatmap(
     st.plotly_chart(figure, width="stretch", key=key)
 
 
+def matrix_table(values: Array, key: str) -> None:
+    """Show a (rows, columns) matrix with explicit zero-based row/column indices."""
+    frame = pd.DataFrame(values, index=pd.Index(range(values.shape[0])))
+    st.dataframe(
+        frame,
+        hide_index=False,
+        width="stretch",
+        key=key,
+        column_config={
+            str(j): st.column_config.NumberColumn(str(j), format="%.4f")
+            for j in range(values.shape[1])
+        },
+    )
+
+
+def equation(formula: str) -> None:
+    """Place one mathematical statement in a distinct, readable panel."""
+    with st.container(border=True):
+        st.latex(formula)
+
+
 def main() -> None:
     """Build controls and show the NumPy and PyTorch calculation pipelines."""
     st.set_page_config(page_title="Attention Lab", page_icon="🔬", layout="wide")
@@ -83,30 +105,92 @@ def main() -> None:
             "Query (Q) là truy vấn; Key (K) dùng để so khớp; Value (V) chứa thông tin "
             "được tổng hợp. Tích vô hướng Q với từng K tạo điểm tương thích."
         )
-        st.latex(r"Q=XW_Q,\quad K=XW_K,\quad V=XW_V")
-        st.latex(r"S=QK^\top,\quad S_{scaled}=S/\sqrt{d_k},\quad A=softmax(S_{scaled}),\quad O=AV")
+        st.caption("Chỉ số bắt đầu từ 0: i là hàng token; cột là thành phần của vector.")
         for column, name, matrix in zip(st.columns(3), ["Q", "K", "V"], [q, k, v], strict=True):
             with column:
-                st.subheader(f"{name} · {matrix.shape}")
-                st.dataframe(matrix, width="stretch")
+                st.subheader(name)
+                st.caption(f"{matrix.shape[0]} hàng × {matrix.shape[1]} cột")
+                equation(rf"\mathbf{{{name}}} = \mathbf{{X}}\mathbf{{W}}_{{{name}}}")
+                matrix_table(matrix, f"matrix_{name}")
+        st.caption("Ví dụ toán học cung cấp trực tiếp Q, K, V; đầu vào tùy chỉnh dùng X và W.")
+        st.subheader("Bốn bước tính attention")
         st.write(
-            "Softmax được tính theo từng hàng (trục key). Chia cho √dₖ giúp hạn chế "
-            "điểm số tăng theo chiều vector. Trừ giá trị lớn nhất trước khi lấy exp "
-            "giúp softmax ổn định về số học."
+            "S và S_scaled là điểm số, A là xác suất, O là vector đầu ra. "
+            "Trong S, S_scaled và A: hàng i là query, cột j là key. "
+            "Trong O: hàng i là query, cột r là thành phần của Value."
         )
-        st.latex(r"A_{ij}=\frac{\exp(s_{ij}-m_i)}{\sum_j\exp(s_{ij}-m_i)},\quad m_i=\max_j s_{ij}")
-        terms = " + ".join(f"({a:.3f} × {b:.3f})" for a, b in zip(q[0], k[0], strict=True))
-        st.code(
-            f"S[0,0] = {terms} = {result.raw_scores[0, 0]:.6f}\n"
-            f"S_scaled[0,0] = {result.raw_scores[0, 0]:.6f} / √{q.shape[-1]} "
-            f"= {result.scaled_scores[0, 0]:.6f}"
-        )
-        st.write("Hàng đầu tiên sau mask và softmax:")
-        st.dataframe({"Điểm sau mask": result.masked_scores[0], "Trọng số": result.weights[0]})
-        output_terms = " + ".join(
-            f"({a:.4f} × {b:.4f})" for a, b in zip(result.weights[0], v[:, 0], strict=True)
-        )
-        st.code(f"O[0,0] = {output_terms} = {result.output[0, 0]:.6f}")
+        stages = [
+            (
+                "1 · S — Điểm tương thích",
+                r"\mathbf{S}=\mathbf{Q}\mathbf{K}^{\mathsf{T}}",
+                r"S_{ij}=\sum_{r=0}^{d_k-1}Q_{ir}K_{jr}",
+                result.raw_scores,
+                "S",
+                "Mỗi ô là tích vô hướng của một query với một key; chưa phải xác suất.",
+            ),
+            (
+                "2 · S_scaled — Điểm sau scaling",
+                r"\mathbf{S}_{\mathrm{scaled}}=\frac{\mathbf{S}}{\sqrt{d_k}}",
+                rf"(S_{{\mathrm{{scaled}}}})_{{00}}=\frac{{{result.raw_scores[0, 0]:.4f}}}"
+                rf"{{\sqrt{{{q.shape[-1]}}}}}={result.scaled_scores[0, 0]:.4f}",
+                result.scaled_scores,
+                "S_scaled",
+                "Chia từng điểm cho căn bậc hai của chiều Q/K. Đây là điểm trước khi áp dụng mask.",
+            ),
+            (
+                "3 · A — Trọng số attention",
+                r"\mathbf{A}=\operatorname{softmax}_{\mathrm{key}}(\mathbf{Z})",
+                r"A_{ij}=\frac{\exp(Z_{ij}-m_i)}{\sum_{\ell=0}^{T_k-1}\exp(Z_{i\ell}-m_i)}",
+                result.weights,
+                "A",
+                "Z là điểm sau mask. Softmax theo từng hàng; mỗi hàng hợp lệ có tổng bằng 1.",
+            ),
+            (
+                "4 · O — Đầu ra attention",
+                r"\mathbf{O}=\mathbf{A}\mathbf{V}",
+                r"O_{ir}=\sum_{j=0}^{T_k-1}A_{ij}V_{jr}",
+                result.output,
+                "O",
+                "Mỗi vector đầu ra là tổng các vector Value, "
+                "với hệ số lấy từ hàng tương ứng của A.",
+            ),
+        ]
+        for title, formula, detail, values, name, explanation in stages:
+            with st.container(border=True):
+                st.subheader(title)
+                st.write(explanation)
+                st.latex(formula)
+                st.latex(detail)
+                if name == "A":
+                    st.latex(r"m_i=\max_{\ell}Z_{i\ell}")
+                    if causal:
+                        st.latex(
+                            r"Z_{ij}=\begin{cases}"
+                            r"(S_{\mathrm{scaled}})_{ij} & j\leq i \\ "
+                            r"-\infty & j>i\end{cases}"
+                        )
+                    else:
+                        st.latex(r"\mathbf{Z}=\mathbf{S}_{\mathrm{scaled}}")
+                    st.caption("Trừ cực đại của hàng trước khi lấy exp để ổn định số học.")
+                st.caption(f"{name}: {values.shape[0]} hàng × {values.shape[1]} cột")
+                matrix_table(values, f"matrix_{name}")
+        with st.expander("Kiểm tra phép tính tại hàng i = 0"):
+            terms = r" + ".join(
+                rf"({a:.3f}\times {b:.3f})" for a, b in zip(q[0], k[0], strict=True)
+            )
+            st.latex(rf"S_{{00}}={terms}={result.raw_scores[0, 0]:.6f}")
+            st.write("Điểm sau mask và xác suất ứng với từng key j:")
+            st.dataframe(
+                pd.DataFrame(
+                    {"Z[0,j]": result.masked_scores[0], "A[0,j]": result.weights[0]},
+                    index=pd.Index(range(len(tokens)), name="j"),
+                ),
+                hide_index=False,
+            )
+            st.latex(
+                rf"O_{{00}}=\sum_{{j=0}}^{{{len(tokens) - 1}}}A_{{0j}}V_{{j0}}"
+                rf"={result.output[0, 0]:.6f}"
+            )
         if mode == "Chuỗi token tùy chỉnh":
             st.warning(
                 "Embedding và phép chiếu là ngẫu nhiên, chưa huấn luyện. Trọng số "
@@ -124,10 +208,10 @@ def main() -> None:
         )
         left, right = st.columns(2)
         with left:
-            heatmap(result.raw_scores, "Điểm thô QKᵀ", "raw", rows=labels, columns=labels)
+            heatmap(result.raw_scores, "S · Điểm thô QKᵀ", "raw", rows=labels, columns=labels)
             heatmap(
                 result.weights,
-                "Trọng số attention",
+                "A · Trọng số attention",
                 "weights",
                 rows=labels,
                 columns=labels,
@@ -136,12 +220,12 @@ def main() -> None:
         with right:
             heatmap(
                 result.scaled_scores,
-                "Điểm đã chia √dₖ (trước mask)",
+                "S_scaled · Điểm sau scaling (trước mask)",
                 "scaled",
                 rows=labels,
                 columns=labels,
             )
-            heatmap(result.output, "Đầu ra AV", "output", rows=labels)
+            heatmap(result.output, "O · Đầu ra AV", "output", rows=labels)
         chart = go.Figure()
         chart.add_bar(x=labels, y=result.weights[query], name="Có scaling")
         chart.add_bar(x=labels, y=unscaled.weights[query], name="Không scaling")
@@ -212,7 +296,13 @@ def main() -> None:
             x = torch.randn(1, count, width, generator=torch.Generator().manual_seed(seed))
             with torch.no_grad():
                 details = model.inspect(x, causal=causal)
-            st.latex(r"head_i=Attention(Q_i,K_i,V_i),\quad MHA=Concat(head_1,\ldots,head_h)W_O")
+            equation(
+                r"\mathrm{head}_i=\operatorname{Attention}(\mathbf{Q}_i,\mathbf{K}_i,\mathbf{V}_i)"
+            )
+            equation(
+                r"\operatorname{MHA}(\mathbf{X})="
+                r"\operatorname{Concat}(\mathrm{head}_1,\ldots,\mathrm{head}_h)\mathbf{W}_O"
+            )
             st.write(
                 f"X: {tuple(x.shape)} · d_head = {width // heads} · "
                 f"Q/K/V sau tách: {tuple(details.q.shape)}"

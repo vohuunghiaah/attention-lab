@@ -63,3 +63,24 @@ This document tracks all AI-assisted operations, architectural decisions, comple
 - Versions installed: NumPy 2.4.6, PyTorch 2.14.1, Streamlit 1.66.1, Plotly 6.9.0,
   pytest 9.1.1, Ruff 0.17.1. CI workflow authored but not run on GitHub.
 - No commit, remote push, deployment, pretrained model or external AI service used.
+
+## 2026-10-23 — Improve matrix indices and mathematical presentation
+
+- Addressed all three browser comments: Q/K/V explicitly show row index i = 0,1,2
+  and feature columns 0,1; all four intermediate matrices have indexed numeric tables.
+- Replaced the crowded inline formula chain with individual equation panels and four
+  stages: S (raw scores), S_scaled (before mask), A (probabilities), O (weighted values).
+- Used bold matrix notation, upright operators/subscripts, proper fractions and sums;
+  distinguished masked scores Z from S_scaled and documented row/column meanings.
+- Updated chart titles and split Multi-Head equations. Added explicit pandas dependency.
+- Verification: pytest tests/ — 21 passed, 1 CUDA skip; Ruff lint and format checks passed.
+  AppTest checks Q/K/V indices plus causal probabilities and existing interactive controls.
+- Inspected the running browser at the user's 894px viewport. Saved indexed-qkv.png
+  as evidence of the revised tables. Mathematical engines were unchanged.
+
+## 2026-10-23 — Remove matrix index header label
+
+- Removed the index name "i" from the shared matrix table renderer for Q, K, V,
+  S, S_scaled, A and O. Numeric row and column indices remain visible.
+- Updated the existing UI assertion to expect an unnamed row index.
+- Verification: 21 tests passed, 1 optional CUDA test skipped; Ruff lint and format passed.
